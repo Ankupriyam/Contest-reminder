@@ -79,7 +79,7 @@ function Dashboard() {
           {stats.map((s) => (
             <div
               key={s.label}
-              className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-soft card-hover hover:[--tw:1] hover:card-hover-on"
+              className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-soft card-hover hover:card-hover-on"
             >
               <div className="absolute inset-x-0 -top-px h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
               <div className="flex items-start justify-between">
