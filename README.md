@@ -1,14 +1,22 @@
 # ContestSync
 
-ContestSync automatically synchronizes competitive programming contests from major platforms (LeetCode, Codeforces, CodeChef, and AtCoder) directly into your Google Calendar. It sets up automatic reminders so you never miss a contest again.
+ContestSync automatically synchronizes competitive programming contests from major platforms (LeetCode, Codeforces, CodeChef, and AtCoder) directly into your Google Calendar. It sets up automatic reminders and features a self-healing reconciliation sync loop so your calendar is always correct.
 
 ## Features
 
 - **Multi-Platform Support**: Fetch upcoming contests from LeetCode, Codeforces, CodeChef, and AtCoder.
-- **Google Calendar Integration**: Automatically provisions a dedicated "Contests · ContestSync" calendar in your Google account.
-- **Idempotent Sync Engine**: Prevents duplicate calendar events. Intelligently updates existing events if contest times or names change, and removes events for cancelled contests.
+- **Google Calendar Integration**: Automatically provisions a dedicated "Competitive Programming Contests" calendar in your Google account.
+- **Self-Healing & Reconciled Sync Engine**: 
+  - Prevents duplicate calendar events using compound index validations (`userId` + `contestId`).
+  - Automatically checks Google Calendar. If a synced event is manually deleted from your calendar, the engine recreates it on the next sync run.
+  - Reconciles manual overrides. If you modify event details directly on Google Calendar, the engine overwrites them to match the database source of truth.
+  - Cleans up orphaned events and deletes cancelled rounds.
+- **Real-Time Analytics**: Full 30-day sync activity graphs and sync health indicators (failure rates, lag) compiled dynamically from live MongoDB aggregation query runs.
 - **Customizable Reminders**: Set custom alert times (e.g., 15 minutes before, 1 hour before) that sync directly as Google Calendar notifications.
-- **Secure Authentication**: Uses Google OAuth 2.0 with rotating JWTs securely stored in HttpOnly cookies.
+- **Hardened Authentication**: 
+  - Google OAuth 2.0 with rotating JWTs securely stored in secure, HttpOnly cookies.
+  - AES-256-GCM encryption for stored Google refresh tokens utilizing a random 12-byte initialization vector (IV) per encryption, complete with legacy AES-CBC fallback.
+  - Sanitized database query structures protecting endpoints against ReDoS (Regular Expression Denial of Service).
 
 ## Tech Stack
 
@@ -67,8 +75,8 @@ Ensure you populate all variables in `server/.env`:
 - `CLIST_API_KEY`
 - `JWT_SECRET` (Must be secure, e.g., 32+ chars)
 - `JWT_REFRESH_SECRET` (Must be secure, e.g., 32+ chars)
-- `ENCRYPTION_KEY` (64 character hex string)
-- `ENCRYPTION_IV` (32 character hex string)
+- `ENCRYPTION_KEY` (64 character hex string representing a 256-bit key)
+- `ENCRYPTION_IV` (Optional. Legacy 32 character hex string for backward compatibility decryption)
 
 Start the development server:
 
@@ -103,12 +111,13 @@ The frontend will run on `http://localhost:8080`.
 ## Architecture Overview
 
 1. **Background Jobs**: The backend runs a `node-cron` job that periodically pulls data from the CLIST API and caches upcoming contests in MongoDB.
-2. **Sync Engine**: Every hour, the sync engine iterates through users, fetching their configured platforms, and pushes new or updated contests via the Google Calendar API.
-3. **Authentication Flow**: The user signs in via Google OAuth. The backend provisions HttpOnly cookies for a seamless, secure session without exposing access tokens directly to the frontend JavaScript.
+2. **Sync Engine**: The sync engine runs every hour, fetching configured platforms, verifying live Google Calendar states, recreating manually deleted calendar entries, and aligning event names and start times.
+3. **Symmetric Encryption**: Google refresh tokens are stored symmetrically encrypted with GCM. Each record preserves its own `iv` and `authTag`.
+4. **Authentication Flow**: The user signs in via Google OAuth. The backend provisions HttpOnly cookies for a seamless, secure session without exposing access tokens directly to the frontend JavaScript.
 
 ## Testing
 
-The backend utilizes `vitest` for unit testing the core synchronization engine.
+The backend utilizes `vitest` for unit testing the core synchronization engine and crypto utilities.
 
 ```bash
 cd server
