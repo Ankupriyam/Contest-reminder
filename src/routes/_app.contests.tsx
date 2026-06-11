@@ -112,12 +112,17 @@ function ContestsPage() {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-        <Search className="h-5 w-5" />
+    <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
+      <div className="relative">
+        <div className="absolute inset-0 -z-10 rounded-full bg-primary/25 blur-2xl" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl gradient-primary text-white shadow-glow">
+          <Search className="h-6 w-6" />
+        </div>
       </div>
-      <div className="mt-4 text-sm font-medium">No contests match your filters</div>
-      <div className="mt-1 text-xs text-muted-foreground">Try a different search or enable more platforms.</div>
+      <div className="mt-5 text-base font-semibold">No contests match your filters</div>
+      <div className="mt-1.5 max-w-sm text-sm text-muted-foreground">
+        Try a different search term, or enable more platforms in your filters.
+      </div>
     </div>
   );
 }
