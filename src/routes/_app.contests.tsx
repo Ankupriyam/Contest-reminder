@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { platformMeta, platformKeyToDisplay, type PlatformKey } from "@/lib/platform-config";
-import { PlatformIcon } from "@/components/PlatformBadge";
-import { StatusBadge } from "@/components/StatusBadge";
-import { ContestDetailModal } from "@/components/ContestDetailModal";
+import { PlatformIcon } from "@/components/contests/PlatformBadge";
+import { StatusBadge } from "@/components/contests/StatusBadge";
+import { ContestDetailModal } from "@/components/contests/ContestDetailModal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Filter, Loader2 } from "lucide-react";

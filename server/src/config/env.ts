@@ -52,8 +52,9 @@ const envSchema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/, 'ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)'),
 
   ENCRYPTION_IV: z
-    .string({ required_error: 'ENCRYPTION_IV is required (16 bytes hex = 32 hex chars)' })
-    .regex(/^[0-9a-fA-F]{32}$/, 'ENCRYPTION_IV must be exactly 32 hex characters (16 bytes)'),
+    .string()
+    .regex(/^[0-9a-fA-F]{32}$/, 'ENCRYPTION_IV must be exactly 32 hex characters (16 bytes)')
+    .optional(),
 
   FRONTEND_URL: z
     .string()

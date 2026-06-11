@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { PlatformIcon } from "@/components/PlatformBadge";
-import { StatusBadge } from "@/components/StatusBadge";
+import { PlatformIcon } from "./PlatformBadge";
+import { StatusBadge } from "./StatusBadge";
 import { CalendarCheck, ExternalLink, Clock, Bell } from "lucide-react";
 
 export function ContestDetailModal({

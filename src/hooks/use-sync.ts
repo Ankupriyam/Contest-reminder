@@ -9,6 +9,13 @@ export function useSyncHistory(params?: { page?: number; limit?: number }) {
   });
 }
 
+export function useSyncStats() {
+  return useQuery({
+    queryKey: ['sync-stats'],
+    queryFn: syncApi.getSyncStats,
+  });
+}
+
 export function useTriggerSync() {
   const queryClient = useQueryClient();
 
@@ -16,6 +23,7 @@ export function useTriggerSync() {
     mutationFn: syncApi.triggerSync,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sync-history'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-stats'] });
       queryClient.invalidateQueries({ queryKey: ['contests'] });
       queryClient.invalidateQueries({ queryKey: ['profile'] });
     },

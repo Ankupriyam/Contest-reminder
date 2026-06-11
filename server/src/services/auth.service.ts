@@ -61,7 +61,7 @@ export async function handleGoogleCallback(code: string) {
   // Update details just in case they changed
   user.email = userInfo.email;
   user.name = userInfo.name;
-  user.avatarUrl = userInfo.picture;
+  user.avatarUrl = userInfo.picture || undefined;
   
   await user.save();
 

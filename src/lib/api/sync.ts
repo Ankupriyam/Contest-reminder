@@ -23,6 +23,20 @@ export interface PaginatedSyncHistory {
   pages: number;
 }
 
+export interface SyncActivityEntry {
+  day: string;
+  synced: number;
+  updated: number;
+}
+
+export interface SyncStats {
+  totalSynced: number;
+  lastSyncAt: string | null;
+  failureRate: number;
+  status: 'healthy' | 'warning' | 'error' | 'inactive';
+  activitySeries: SyncActivityEntry[];
+}
+
 export const syncApi = {
   triggerSync: () => {
     return client.post<SyncResult>('/sync').then((r) => r.data);
@@ -30,5 +44,9 @@ export const syncApi = {
   
   getSyncHistory: (params?: { page?: number; limit?: number }) => {
     return client.get<PaginatedSyncHistory>('/sync/history', { params }).then((r) => r.data);
+  },
+
+  getSyncStats: () => {
+    return client.get<SyncStats>('/sync/stats').then((r) => r.data);
   },
 };

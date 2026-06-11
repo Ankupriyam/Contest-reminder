@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Logo } from "@/components/Logo";
+import { Logo } from "@/components/layout/Logo";
 import { Input } from "@/components/ui/input";
 import { platformMeta, type PlatformKey } from "@/lib/platform-config";
 import { Check, CalendarPlus, ChevronLeft, ChevronRight, PartyPopper, Loader2 } from "lucide-react";

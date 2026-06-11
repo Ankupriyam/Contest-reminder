@@ -6,6 +6,10 @@ import { NotFoundError } from '../utils/errors.js';
 const router = Router();
 router.use(authenticate);
 
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const { platform, search, page = '1', limit = '20' } = req.query;
@@ -16,7 +20,7 @@ router.get('/', async (req, res, next) => {
     }
 
     if (search) {
-      query.name = { $regex: search as string, $options: 'i' };
+      query.name = { $regex: escapeRegExp(search as string), $options: 'i' };
     }
 
     const pageNum = parseInt(page as string, 10) || 1;

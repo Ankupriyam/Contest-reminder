@@ -4,7 +4,7 @@ import {
   LayoutDashboard, ListChecks, Activity as ActivityIcon, Settings, UserRound,
   Search, Moon, Sun, RefreshCw, Menu, ChevronDown, LogOut, Bell, Sparkles,
 } from "lucide-react";
-import { Logo } from "@/components/Logo";
+import { Logo } from "@/components/layout/Logo";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -14,9 +14,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { toast } from "sonner";
-import { CommandPalette, useCommandPalette } from "@/components/CommandPalette";
+import { CommandPalette, useCommandPalette } from "@/components/layout/CommandPalette";
 import { useAuth } from "@/hooks/use-auth";
-import { useTriggerSync } from "@/hooks/use-sync";
+import { useTriggerSync, useSyncStats } from "@/hooks/use-sync";
 import { useProfile } from "@/hooks/use-profile";
 import { formatDistanceToNow } from "date-fns";
 
@@ -69,23 +69,39 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function SyncStatusWidget() {
-  const { data } = useProfile();
-  const isHealthy = true; // Could be determined based on errors
-  
+  const { data: syncStats } = useSyncStats();
+  const status = syncStats?.status || 'healthy';
+  const isHealthy = status === 'healthy';
+  const isWarning = status === 'warning';
+  const isError = status === 'error';
+
+  const statusLabel = 
+    isHealthy  ? "Sync healthy" :
+    isWarning  ? "Sync warning" :
+    isError    ? "Sync error"   :
+                 "Sync inactive";
+
+  const indicatorColor = 
+    isHealthy  ? "bg-success" :
+    isWarning  ? "bg-warning" :
+    isError    ? "bg-destructive" :
+                 "bg-muted-foreground";
+
   return (
     <>
       <div className="flex items-center gap-2">
         <span className="relative flex h-2 w-2">
           {isHealthy && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-70" />}
-          <span className={cn("relative inline-flex h-2 w-2 rounded-full", isHealthy ? "bg-success" : "bg-warning")} />
+          {isWarning && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warning opacity-70" />}
+          <span className={cn("relative inline-flex h-2 w-2 rounded-full", indicatorColor)} />
         </span>
         <div className="text-xs font-semibold text-sidebar-foreground">
-          {isHealthy ? "Sync healthy" : "Sync issue"}
+          {statusLabel}
         </div>
       </div>
       <div className="mt-1 text-[11px] text-muted-foreground">
-        {data?.syncStats?.lastSyncAt 
-          ? `Last sync ${formatDistanceToNow(new Date(data.syncStats.lastSyncAt))} ago` 
+        {syncStats?.lastSyncAt 
+          ? `Last sync ${formatDistanceToNow(new Date(syncStats.lastSyncAt), { addSuffix: true })}` 
           : "Never synced"}
       </div>
     </>

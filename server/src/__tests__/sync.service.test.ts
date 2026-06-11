@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { syncUserContests } from '../services/sync.service';
-import User from '../models/User';
-import Preference from '../models/Preference';
-import Contest from '../models/Contest';
-import SyncedEvent from '../models/SyncedEvent';
-import SyncLog from '../models/SyncLog';
-import * as authService from '../services/auth.service';
-import * as calendarService from '../services/calendar.service';
+import { syncUserContests } from '../services/sync.service.js';
+import User from '../models/User.js';
+import Preference from '../models/Preference.js';
+import Contest from '../models/Contest.js';
+import SyncedEvent from '../models/SyncedEvent.js';
+import SyncLog from '../models/SyncLog.js';
+import * as authService from '../services/auth.service.js';
+import * as calendarService from '../services/calendar.service.js';
 import { Types } from 'mongoose';
 
 // Mock dependencies
@@ -44,6 +44,13 @@ describe('Sync Service - syncUserContests', () => {
     } as any);
 
     vi.mocked(SyncLog.create).mockResolvedValue({} as any);
+
+    // Default getEvent mock resolves to a valid event
+    vi.mocked(calendarService.getEvent).mockResolvedValue({
+      id: 'google-event-id-1',
+      summary: '[LEETCODE] LeetCode Weekly',
+      start: { dateTime: new Date(Date.now() + 86400000).toISOString() },
+    } as any);
   });
 
   it('should create events for new contests', async () => {
@@ -102,6 +109,11 @@ describe('Sync Service - syncUserContests', () => {
     } as any);
 
     vi.mocked(calendarService.updateEvent).mockResolvedValue(undefined);
+    vi.mocked(calendarService.getEvent).mockResolvedValue({
+      id: 'google-event-id-1',
+      summary: '[LEETCODE] LeetCode Weekly',
+      start: { dateTime: originalTime.toISOString() },
+    } as any);
 
     const result = await syncUserContests(mockUserId);
 
@@ -135,6 +147,12 @@ describe('Sync Service - syncUserContests', () => {
       populate: vi.fn().mockResolvedValue([mockSyncedEvent]),
     } as any);
 
+    vi.mocked(calendarService.getEvent).mockResolvedValue({
+      id: 'google-event-id-1',
+      summary: '[LEETCODE] LeetCode Weekly',
+      start: { dateTime: time.toISOString() },
+    } as any);
+
     const result = await syncUserContests(mockUserId);
 
     expect(result).toEqual({ added: 0, updated: 0, removed: 0, errors: 0 });
@@ -153,6 +171,7 @@ describe('Sync Service - syncUserContests', () => {
         platform: 'leetcode',
         startTime: new Date(Date.now() + 86400000),
       },
+      status: 'synced',
       save: vi.fn().mockResolvedValue({}),
     };
 
@@ -172,6 +191,44 @@ describe('Sync Service - syncUserContests', () => {
       mockAccessToken, mockCalendarId, 'google-event-id-1'
     );
     expect(mockSyncedEvent.status).toBe('deleted');
+    expect(mockSyncedEvent.save).toHaveBeenCalled();
+  });
+
+  it('should recreate calendar event if it was manually deleted from Google Calendar', async () => {
+    const contestId = new Types.ObjectId();
+    const time = new Date(Date.now() + 86400000);
+
+    const mockUpcomingContest = {
+      _id: contestId,
+      id: contestId.toString(),
+      name: 'LeetCode Weekly',
+      platform: 'leetcode',
+      startTime: time,
+    };
+
+    const mockSyncedEvent = {
+      googleEventId: 'google-event-id-1',
+      contestId: mockUpcomingContest,
+      status: 'synced',
+      save: vi.fn().mockResolvedValue({}),
+    };
+
+    vi.mocked(Contest.find).mockResolvedValue([mockUpcomingContest] as any);
+    vi.mocked(SyncedEvent.find).mockReturnValue({
+      populate: vi.fn().mockResolvedValue([mockSyncedEvent]),
+    } as any);
+
+    // Mock getEvent to return null (meaning manually deleted on Google Calendar)
+    vi.mocked(calendarService.getEvent).mockResolvedValue(null);
+    vi.mocked(calendarService.createEvent).mockResolvedValue('new-google-event-id');
+
+    const result = await syncUserContests(mockUserId);
+
+    expect(result).toEqual({ added: 1, updated: 0, removed: 0, errors: 0 });
+    expect(calendarService.createEvent).toHaveBeenCalledWith(
+      mockAccessToken, mockCalendarId, mockUpcomingContest, 15
+    );
+    expect(mockSyncedEvent.googleEventId).toBe('new-google-event-id');
     expect(mockSyncedEvent.save).toHaveBeenCalled();
   });
 });

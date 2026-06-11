@@ -1,9 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { PlatformIcon } from "@/components/PlatformBadge";
-import { StatusBadge } from "@/components/StatusBadge";
-import { ContestDetailModal } from "@/components/ContestDetailModal";
-import { Sparkline } from "@/components/Sparkline";
+import { PlatformIcon } from "@/components/contests/PlatformBadge";
+import { StatusBadge } from "@/components/contests/StatusBadge";
+import { ContestDetailModal } from "@/components/contests/ContestDetailModal";
+import { Sparkline } from "@/components/layout/Sparkline";
 import { Button } from "@/components/ui/button";
 import {
   Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useProfile } from "@/hooks/use-profile";
 import { useUpcomingContests } from "@/hooks/use-contests";
-import { useSyncHistory, useTriggerSync } from "@/hooks/use-sync";
+import { useSyncHistory, useTriggerSync, useSyncStats } from "@/hooks/use-sync";
 import { platformMeta, type PlatformKey } from "@/lib/platform-config";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -30,17 +30,6 @@ export const Route = createFileRoute("/_app/dashboard")({
 const spark = (seed: number, n = 18) =>
   Array.from({ length: n }, (_, i) => 5 + Math.sin(i / 1.3 + seed) * 2 + (i % 5));
 
-// 30-day sync activity
-const syncSeries = Array.from({ length: 30 }, (_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() - (29 - i));
-  return {
-    day: d.toLocaleDateString([], { month: "short", day: "numeric" }),
-    synced: Math.round(4 + Math.sin(i / 2) * 3 + (i % 4) + Math.random() * 2),
-    updated: Math.round(1 + Math.cos(i / 3) * 1.5 + Math.random()),
-  };
-});
-
 function Dashboard() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<any | null>(null);
@@ -50,6 +39,7 @@ function Dashboard() {
   const { data: profile } = useProfile();
   const { data: upcomingContests = [] } = useUpcomingContests();
   const { data: history } = useSyncHistory({ limit: 6 });
+  const { data: syncStats } = useSyncStats();
   const triggerSync = useTriggerSync();
 
   const handleSync = () => {
@@ -66,10 +56,10 @@ function Dashboard() {
   }, [profile]);
 
   const stats = [
-    { label: "Total Synced Contests", value: profile?.syncStats?.totalSynced?.toString() || "0", delta: "lifetime", trend: "up", Icon: CalendarCheck, color: "var(--success)", spark: spark(1) },
+    { label: "Total Synced Contests", value: syncStats?.totalSynced?.toString() || "0", delta: "lifetime", trend: "up", Icon: CalendarCheck, color: "var(--success)", spark: spark(1) },
     { label: "Upcoming Contests",     value: upcomingContests.length.toString(),   delta: "next 7 days",   trend: "up", Icon: TrendingUp,    color: "var(--primary)", spark: spark(2.4) },
-    { label: "Active Platforms",      value: `${activePlatformsCount}/4`, delta: "connected", trend: "flat", Icon: Layers,      color: "var(--primary)", spark: spark(3.1) },
-    { label: "Last Sync",             value: profile?.syncStats?.lastSyncAt ? formatDistanceToNow(new Date(profile.syncStats.lastSyncAt), { addSuffix: true }) : "Never",  delta: "auto sync active", trend: "up", Icon: RefreshCw,     color: "var(--primary)", spark: spark(4.7) },
+    { label: "Failure Rate (24h)",    value: syncStats ? `${syncStats.failureRate}%` : "0%", delta: syncStats?.status === 'inactive' ? "inactive" : "sync health", trend: syncStats?.failureRate && syncStats.failureRate > 0 ? "down" : "flat", Icon: Layers,      color: "var(--primary)", spark: spark(3.1) },
+    { label: "Last Sync",             value: syncStats?.lastSyncAt ? formatDistanceToNow(new Date(syncStats.lastSyncAt), { addSuffix: true }) : "Never",  delta: `Status: ${syncStats?.status || "unknown"}`, trend: "up", Icon: RefreshCw,     color: "var(--primary)", spark: spark(4.7) },
   ];
 
   return (
@@ -150,7 +140,7 @@ function Dashboard() {
               </div>
               <div className="mt-4 h-[240px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={syncSeries} margin={{ top: 10, right: 8, left: -16, bottom: 0 }}>
+                  <AreaChart data={syncStats?.activitySeries || []} margin={{ top: 10, right: 8, left: -16, bottom: 0 }}>
                     <defs>
                       <linearGradient id="g-added" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.45} />

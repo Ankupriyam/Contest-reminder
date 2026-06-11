@@ -4,7 +4,7 @@ import Contest from '../models/Contest.js';
 import SyncedEvent from '../models/SyncedEvent.js';
 import SyncLog from '../models/SyncLog.js';
 import { getGoogleAccessToken } from './auth.service.js';
-import { createEvent, updateEvent, deleteEvent } from './calendar.service.js';
+import { createEvent, updateEvent, deleteEvent, getEvent } from './calendar.service.js';
 import { logger } from '../utils/logger.js';
 import type { SyncResult, IContest, ISyncedEvent, Platform } from '../types/index.js';
 
@@ -63,9 +63,20 @@ export async function syncUserContests(userId: string): Promise<SyncResult> {
       status: { $ne: 'deleted' },
     }).populate<{ contestId: IContest }>('contestId');
 
+    // Filter out orphaned synced events where the underlying contest was deleted
+    const validSyncedEvents = syncedEvents.filter(e => e.contestId !== null && e.contestId !== undefined);
+
+    // Clean up orphaned synced events asynchronously
+    const orphanedIds = syncedEvents.filter(e => !e.contestId).map(e => e._id);
+    if (orphanedIds.length > 0) {
+      SyncedEvent.deleteMany({ _id: { $in: orphanedIds } }).catch(err =>
+        logger.error(`Failed to clean up orphaned synced events: ${err.message}`)
+      );
+    }
+
     // Create maps for quick lookup
     const upcomingMap = new Map(upcomingContests.map(c => [c.id, c]));
-    const syncedMap = new Map(syncedEvents.map(e => [e.contestId._id.toString(), e]));
+    const syncedMap = new Map(validSyncedEvents.map(e => [e.contestId._id.toString(), e]));
 
     // --- PROCESS NEW & UPDATED EVENTS ---
     for (const contest of upcomingContests) {
@@ -102,12 +113,67 @@ export async function syncUserContests(userId: string): Promise<SyncResult> {
           result.errors++;
         }
       } else {
-        // EXISTING EVENT - check for updates (start time or name changed)
+        // EXISTING EVENT - check for updates or manual deletions/modifications
         const syncedContest = existingSync.contestId;
+
+        // Self-healing check: Verify if the event still exists on Google Calendar
+        let gEvent = null;
+        try {
+          gEvent = await withRetry(() => 
+            getEvent(accessToken, user.calendarId!, existingSync.googleEventId)
+          );
+        } catch (error: any) {
+          logger.warn(`Failed to verify event ${existingSync.googleEventId} on Google Calendar: ${error.message}`);
+        }
+
+        if (!gEvent) {
+          // Event was manually deleted from Google Calendar — Recreate it!
+          logger.info(`Reconciling manually deleted event for contest ${contest.name} (${contest.id})`);
+          try {
+            const googleEventId = await withRetry(() => 
+              createEvent(accessToken, user.calendarId!, contest, pref.reminderMinutes)
+            );
+            
+            existingSync.googleEventId = googleEventId;
+            existingSync.status = 'synced';
+            existingSync.syncedAt = new Date();
+            await existingSync.save();
+
+            await SyncLog.create({
+              userId,
+              action: 'added',
+              contestName: contest.name,
+              platform: contest.platform,
+              details: 'Recreated manually deleted calendar event',
+            });
+
+            result.added++;
+          } catch (error: any) {
+            logger.error(`Error recreating manually deleted event for contest ${contest.id}: ${error.message}`);
+            await SyncLog.create({
+              userId, action: 'error', contestName: contest.name, platform: contest.platform,
+              details: `Failed to recreate manual deletion: ${error.message}`
+            });
+            result.errors++;
+          }
+          continue;
+        }
+
+        // Compare Google Calendar event state with DB source of truth to correct manual user edits
+        const expectedSummary = `[${contest.platform.toUpperCase()}] ${contest.name}`;
+        
+        let timeMismatch = false;
+        if (gEvent.start?.dateTime) {
+          const gStart = new Date(gEvent.start.dateTime);
+          timeMismatch = gStart.getTime() !== contest.startTime.getTime();
+        }
+
+        const nameMismatch = gEvent.summary !== expectedSummary;
+
         const timeChanged = syncedContest.startTime.getTime() !== contest.startTime.getTime();
         const nameChanged = syncedContest.name !== contest.name;
 
-        if (timeChanged || nameChanged) {
+        if (timeChanged || nameChanged || timeMismatch || nameMismatch) {
           try {
             await withRetry(() => 
               updateEvent(accessToken, user.calendarId!, existingSync.googleEventId, contest, pref.reminderMinutes)
@@ -122,7 +188,7 @@ export async function syncUserContests(userId: string): Promise<SyncResult> {
               action: 'updated',
               contestName: contest.name,
               platform: contest.platform,
-              details: timeChanged ? 'Time updated' : 'Name updated',
+              details: (timeChanged || timeMismatch) ? 'Time reconciled' : 'Name reconciled',
             });
 
             result.updated++;
@@ -141,7 +207,7 @@ export async function syncUserContests(userId: string): Promise<SyncResult> {
     // --- PROCESS REMOVED EVENTS ---
     // A synced event should be removed if its contest is no longer in upcomingContests
     // (e.g. cancelled, or user disabled the platform)
-    for (const syncEvent of syncedEvents) {
+    for (const syncEvent of validSyncedEvents) {
       const contestId = syncEvent.contestId._id.toString();
       if (!upcomingMap.has(contestId) && syncEvent.contestId.startTime > now) {
         try {
