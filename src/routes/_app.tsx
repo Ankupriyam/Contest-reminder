@@ -15,6 +15,10 @@ import {
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { CommandPalette, useCommandPalette } from "@/components/CommandPalette";
+import { useAuth } from "@/hooks/use-auth";
+import { useTriggerSync } from "@/hooks/use-sync";
+import { useProfile } from "@/hooks/use-profile";
+import { formatDistanceToNow } from "date-fns";
 
 export const Route = createFileRoute("/_app")({ component: AppShell });
 
@@ -58,21 +62,49 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
         })}
       </nav>
       <div className="m-3 rounded-xl border border-sidebar-border bg-gradient-to-br from-primary/10 to-transparent p-3">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-70" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
-          </span>
-          <div className="text-xs font-semibold text-sidebar-foreground">Sync healthy</div>
-        </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">Last sync 4 min ago · 4 platforms</div>
+        <SyncStatusWidget />
       </div>
     </div>
   );
 }
 
+function SyncStatusWidget() {
+  const { data } = useProfile();
+  const isHealthy = true; // Could be determined based on errors
+  
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="relative flex h-2 w-2">
+          {isHealthy && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-70" />}
+          <span className={cn("relative inline-flex h-2 w-2 rounded-full", isHealthy ? "bg-success" : "bg-warning")} />
+        </span>
+        <div className="text-xs font-semibold text-sidebar-foreground">
+          {isHealthy ? "Sync healthy" : "Sync issue"}
+        </div>
+      </div>
+      <div className="mt-1 text-[11px] text-muted-foreground">
+        {data?.syncStats?.lastSyncAt 
+          ? `Last sync ${formatDistanceToNow(new Date(data.syncStats.lastSyncAt))} ago` 
+          : "Never synced"}
+      </div>
+    </>
+  );
+}
+
 function Topbar({ onMenu, onOpenPalette }: { onMenu: () => void; onOpenPalette: () => void }) {
   const { theme, toggle } = useTheme();
+  const { user, logout } = useAuth();
+  const triggerSync = useTriggerSync();
+
+  const handleSync = () => {
+    toast.promise(triggerSync.mutateAsync(), {
+      loading: "Syncing your contests...",
+      success: "Sync completed successfully!",
+      error: "Failed to sync contests.",
+    });
+  };
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/70 px-4 backdrop-blur-xl sm:px-6">
       <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenu} aria-label="Open menu">
@@ -94,13 +126,14 @@ function Topbar({ onMenu, onOpenPalette }: { onMenu: () => void; onOpenPalette: 
         <Button
           size="sm"
           className="hidden gradient-primary text-white shadow-glow hover:opacity-90 sm:inline-flex"
-          onClick={() => toast.success("Sync started", { description: "Fetching latest contests…" })}
+          onClick={handleSync}
+          disabled={triggerSync.isPending}
         >
-          <RefreshCw className="h-4 w-4" /> Sync now
+          <RefreshCw className={cn("h-4 w-4", triggerSync.isPending && "animate-spin")} /> 
+          {triggerSync.isPending ? "Syncing..." : "Sync now"}
         </Button>
         <Button variant="ghost" size="icon" aria-label="Notifications" className="relative">
           <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary shadow-glow" />
         </Button>
         <Button variant="ghost" size="icon" aria-label="Toggle theme" onClick={toggle}>
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
@@ -108,22 +141,27 @@ function Topbar({ onMenu, onOpenPalette }: { onMenu: () => void; onOpenPalette: 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 rounded-full border border-border bg-card px-1.5 py-1 text-sm transition-colors hover:bg-accent">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full gradient-primary text-xs font-semibold text-white shadow-glow">A</span>
-              <span className="hidden sm:inline">Alex</span>
+              {user?.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Avatar" className="h-7 w-7 rounded-full object-cover" />
+              ) : (
+                <span className="flex h-7 w-7 items-center justify-center rounded-full gradient-primary text-xs font-semibold text-white shadow-glow">
+                  {user?.name?.charAt(0) || "U"}
+                </span>
+              )}
+              <span className="hidden sm:inline">{user?.name?.split(" ")[0] || "User"}</span>
               <ChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground sm:inline" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
-              <div className="text-sm font-medium">Alex Carter</div>
-              <div className="text-xs font-normal text-muted-foreground">alex@contestsync.app</div>
+              <div className="text-sm font-medium">{user?.name}</div>
+              <div className="text-xs font-normal text-muted-foreground">{user?.email}</div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild><Link to="/profile">Profile</Link></DropdownMenuItem>
             <DropdownMenuItem asChild><Link to="/settings">Settings</Link></DropdownMenuItem>
-            <DropdownMenuItem><Sparkles className="h-4 w-4" /> What's new</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem className="text-destructive" onClick={() => logout()}>
               <LogOut className="h-4 w-4" /> Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -137,6 +175,16 @@ function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const palette = useCommandPalette();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { isAuthenticated, isLoading, login } = useAuth();
+
+  if (isLoading) {
+    return <div className="flex h-screen items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary" /></div>;
+  }
+
+  if (!isAuthenticated) {
+    login();
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">

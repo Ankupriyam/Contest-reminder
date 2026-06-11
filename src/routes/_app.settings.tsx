@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { platformMeta, type Platform } from "@/lib/mock-data";
+import { useState, useEffect } from "react";
+import { platformMeta, type PlatformKey } from "@/lib/platform-config";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { usePreferences, useUpdatePreferences } from "@/hooks/use-preferences";
+import { useTriggerSync } from "@/hooks/use-sync";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({ meta: [{ title: "Settings — ContestSync" }] }),
@@ -14,11 +18,67 @@ export const Route = createFileRoute("/_app/settings")({
 });
 
 function SettingsPage() {
-  const [enabled, setEnabled] = useState<Record<Platform, boolean>>({
-    LeetCode: true, Codeforces: true, CodeChef: true, AtCoder: true,
+  const { data: pref, isLoading } = usePreferences();
+  const updatePref = useUpdatePreferences();
+  const triggerSync = useTriggerSync();
+
+  const [enabled, setEnabled] = useState<Record<PlatformKey, boolean>>({
+    leetcode: true, codeforces: true, codechef: true, atcoder: true,
   });
   const [reminder, setReminder] = useState("15");
   const [custom, setCustom] = useState("");
+  const [syncInterval, setSyncInterval] = useState("1h");
+
+  // Load preferences into local state
+  useEffect(() => {
+    if (pref) {
+      setEnabled(pref.platforms);
+      const rm = pref.reminderMinutes.toString();
+      if (["5", "15", "30", "60"].includes(rm)) {
+        setReminder(rm);
+      } else {
+        setReminder("custom");
+        setCustom(rm);
+      }
+      setSyncInterval(pref.syncInterval);
+    }
+  }, [pref]);
+
+  const handleSave = async () => {
+    try {
+      const reminderMinutes = reminder === "custom" ? parseInt(custom, 10) || 15 : parseInt(reminder, 10);
+      
+      await updatePref.mutateAsync({
+        platforms: enabled,
+        reminderMinutes,
+        syncInterval,
+      });
+
+      toast.success("Settings saved successfully", {
+        description: "Contests will now sync based on your new preferences.",
+        action: {
+          label: "Sync now",
+          onClick: () => {
+            toast.promise(triggerSync.mutateAsync(), {
+              loading: "Syncing your contests...",
+              success: "Sync completed successfully!",
+              error: "Failed to sync contests.",
+            });
+          }
+        }
+      });
+    } catch (e: any) {
+      toast.error("Failed to save settings", { description: e.message });
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
@@ -29,19 +89,22 @@ function SettingsPage() {
 
       <Card title="Platforms" description="Toggle which platforms sync to your calendar.">
         <div className="grid gap-3 sm:grid-cols-2">
-          {(Object.keys(platformMeta) as Platform[]).map((p) => (
-            <label key={p} className="flex cursor-pointer items-center justify-between rounded-xl border border-border bg-background p-4 transition-colors hover:border-primary/30">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg text-xs font-bold text-white"
-                     style={{ backgroundColor: platformMeta[p].color }}>{platformMeta[p].initials}</div>
-                <div>
-                  <div className="text-sm font-medium">{p}</div>
-                  <div className="text-xs text-muted-foreground">{enabled[p] ? "Syncing" : "Disabled"}</div>
+          {(Object.keys(platformMeta) as PlatformKey[]).map((p) => {
+            const displayName = Object.keys(platformMeta).find(k => (platformMeta as any)[k].key === p) || p;
+            return (
+              <label key={p} className="flex cursor-pointer items-center justify-between rounded-xl border border-border bg-background p-4 transition-colors hover:border-primary/30">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg text-xs font-bold text-white"
+                       style={{ backgroundColor: platformMeta[p].color }}>{platformMeta[p].initials}</div>
+                  <div>
+                    <div className="text-sm font-medium capitalize">{displayName}</div>
+                    <div className="text-xs text-muted-foreground">{enabled[p] ? "Syncing" : "Disabled"}</div>
+                  </div>
                 </div>
-              </div>
-              <Switch checked={enabled[p]} onCheckedChange={(v) => setEnabled((e) => ({ ...e, [p]: v }))} />
-            </label>
-          ))}
+                <Switch checked={enabled[p]} onCheckedChange={(v) => setEnabled((e) => ({ ...e, [p]: v }))} />
+              </label>
+            );
+          })}
         </div>
       </Card>
 
@@ -69,13 +132,20 @@ function SettingsPage() {
             </div>
           )}
         </div>
-        <div className="mt-4 flex justify-end">
-          <Button className="gradient-primary text-white">Save changes</Button>
+        <div className="mt-4 flex justify-end border-t border-border pt-4">
+          <Button 
+            className="gradient-primary text-white" 
+            onClick={handleSave} 
+            disabled={updatePref.isPending}
+          >
+            {updatePref.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save changes
+          </Button>
         </div>
       </Card>
 
       <Card title="Sync schedule" description="How often ContestSync checks for new contests.">
-        <Select defaultValue="1h">
+        <Select value={syncInterval} onValueChange={setSyncInterval}>
           <SelectTrigger className="w-full sm:w-[220px]"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="15m">Every 15 minutes</SelectItem>
@@ -84,6 +154,16 @@ function SettingsPage() {
             <SelectItem value="24h">Once a day</SelectItem>
           </SelectContent>
         </Select>
+        <div className="mt-4 flex justify-end border-t border-border pt-4">
+           <Button 
+            className="gradient-primary text-white" 
+            onClick={handleSave} 
+            disabled={updatePref.isPending}
+          >
+            {updatePref.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save changes
+          </Button>
+        </div>
       </Card>
     </div>
   );

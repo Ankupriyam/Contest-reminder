@@ -1,16 +1,15 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import type { Contest } from "@/lib/mock-data";
 import { PlatformIcon } from "@/components/PlatformBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { CalendarCheck, ExternalLink, Clock, Bell } from "lucide-react";
 
 export function ContestDetailModal({
   contest, open, onOpenChange,
-}: { contest: Contest | null; open: boolean; onOpenChange: (o: boolean) => void }) {
+}: { contest: any | null; open: boolean; onOpenChange: (o: boolean) => void }) {
   if (!contest) return null;
   const start = new Date(contest.startTime);
-  const end = new Date(start.getTime() + contest.durationMinutes * 60000);
+  const end = new Date(contest.endTime || start.getTime() + (contest.duration || 0) * 1000);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -23,7 +22,7 @@ export function ContestDetailModal({
               <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{contest.platform}</span>
                 <span>·</span>
-                <StatusBadge status={contest.status} />
+                <StatusBadge status={new Date() >= start && new Date() <= end ? "live" : new Date() < start ? "upcoming" : "synced"} />
               </div>
             </div>
           </div>
@@ -32,8 +31,8 @@ export function ContestDetailModal({
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           <Info label="Start" value={start.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} />
           <Info label="End"   value={end.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })} />
-          <Info label="Duration" value={`${Math.floor(contest.durationMinutes / 60)}h ${contest.durationMinutes % 60}m`} icon={<Clock className="h-3.5 w-3.5" />} />
-          <Info label="Reminder" value={`${contest.reminderMinutes} min before`} icon={<Bell className="h-3.5 w-3.5" />} />
+          <Info label="Duration" value={`${Math.floor((contest.duration || 0) / 3600)}h ${Math.floor(((contest.duration || 0) % 3600) / 60)}m`} icon={<Clock className="h-3.5 w-3.5" />} />
+          <Info label="Reminder" value={`15 min before`} icon={<Bell className="h-3.5 w-3.5" />} />
         </div>
 
         <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3 text-xs">

@@ -1,7 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { contests, activity, platformMeta } from "@/lib/mock-data";
-import type { Contest } from "@/lib/mock-data";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, useMemo } from "react";
 import { PlatformIcon } from "@/components/PlatformBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ContestDetailModal } from "@/components/ContestDetailModal";
@@ -11,10 +9,17 @@ import {
   Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  CalendarCheck, Clock, Layers, RefreshCw, TrendingUp, Plus, Minus, Pencil,
+  CalendarCheck, Layers, RefreshCw, TrendingUp, Plus, Minus, Pencil,
   ArrowUpRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { useProfile } from "@/hooks/use-profile";
+import { useUpcomingContests } from "@/hooks/use-contests";
+import { useSyncHistory, useTriggerSync } from "@/hooks/use-sync";
+import { platformMeta, type PlatformKey } from "@/lib/platform-config";
+import { toast } from "sonner";
+import { formatDistanceToNow } from "date-fns";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — ContestSync" }] }),
@@ -24,13 +29,6 @@ export const Route = createFileRoute("/_app/dashboard")({
 // pseudo-random but stable sparkline data
 const spark = (seed: number, n = 18) =>
   Array.from({ length: n }, (_, i) => 5 + Math.sin(i / 1.3 + seed) * 2 + (i % 5));
-
-const stats = [
-  { label: "Total Synced Contests", value: "248", delta: "+12 this week", trend: "up", Icon: CalendarCheck, color: "var(--success)", spark: spark(1) },
-  { label: "Upcoming Contests",     value: "9",   delta: "next 7 days",   trend: "up", Icon: TrendingUp,    color: "var(--primary)", spark: spark(2.4) },
-  { label: "Active Platforms",      value: "4/4", delta: "all connected", trend: "flat", Icon: Layers,      color: "var(--primary)", spark: spark(3.1) },
-  { label: "Last Sync",             value: "4m",  delta: "auto every 1h", trend: "up", Icon: RefreshCw,     color: "var(--primary)", spark: spark(4.7) },
-];
 
 // 30-day sync activity
 const syncSeries = Array.from({ length: 30 }, (_, i) => {
@@ -45,8 +43,34 @@ const syncSeries = Array.from({ length: 30 }, (_, i) => {
 
 function Dashboard() {
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState<Contest | null>(null);
-  const openContest = (c: Contest) => { setActive(c); setOpen(true); };
+  const [active, setActive] = useState<any | null>(null);
+  const openContest = (c: any) => { setActive(c); setOpen(true); };
+
+  const { user } = useAuth();
+  const { data: profile } = useProfile();
+  const { data: upcomingContests = [] } = useUpcomingContests();
+  const { data: history } = useSyncHistory({ limit: 6 });
+  const triggerSync = useTriggerSync();
+
+  const handleSync = () => {
+    toast.promise(triggerSync.mutateAsync(), {
+      loading: "Syncing your contests...",
+      success: "Sync completed successfully!",
+      error: "Failed to sync contests.",
+    });
+  };
+
+  const activePlatformsCount = useMemo(() => {
+    if (!profile?.preferences?.platforms) return 0;
+    return Object.values(profile.preferences.platforms).filter(Boolean).length;
+  }, [profile]);
+
+  const stats = [
+    { label: "Total Synced Contests", value: profile?.syncStats?.totalSynced?.toString() || "0", delta: "lifetime", trend: "up", Icon: CalendarCheck, color: "var(--success)", spark: spark(1) },
+    { label: "Upcoming Contests",     value: upcomingContests.length.toString(),   delta: "next 7 days",   trend: "up", Icon: TrendingUp,    color: "var(--primary)", spark: spark(2.4) },
+    { label: "Active Platforms",      value: `${activePlatformsCount}/4`, delta: "connected", trend: "flat", Icon: Layers,      color: "var(--primary)", spark: spark(3.1) },
+    { label: "Last Sync",             value: profile?.syncStats?.lastSyncAt ? formatDistanceToNow(new Date(profile.syncStats.lastSyncAt), { addSuffix: true }) : "Never",  delta: "auto sync active", trend: "up", Icon: RefreshCw,     color: "var(--primary)", spark: spark(4.7) },
+  ];
 
   return (
     <div className="relative">
@@ -65,12 +89,18 @@ function Dashboard() {
               All systems operational
             </div>
             <h1 className="mt-3 truncate text-3xl font-bold tracking-tight sm:text-[34px]">
-              Good afternoon, <span className="gradient-text">Alex</span>
+              Good afternoon, <span className="gradient-text">{user?.name?.split(" ")[0] || "User"}</span>
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">Here's what's coming up across your platforms.</p>
           </div>
-          <Button size="sm" className="gradient-primary text-white shadow-glow hover:opacity-90">
-            <RefreshCw className="h-4 w-4" /> Sync now
+          <Button 
+            size="sm" 
+            className="gradient-primary text-white shadow-glow hover:opacity-90"
+            onClick={handleSync}
+            disabled={triggerSync.isPending}
+          >
+            <RefreshCw className={cn("h-4 w-4", triggerSync.isPending && "animate-spin")} /> 
+            {triggerSync.isPending ? "Syncing..." : "Sync now"}
           </Button>
         </header>
 
@@ -156,32 +186,38 @@ function Dashboard() {
           {/* Activity */}
           <section>
             <div className="h-full overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
-              <div className="border-b border-border px-5 py-4">
-                <h2 className="font-semibold">Recent activity</h2>
-                <p className="text-xs text-muted-foreground">Calendar changes in the last 48h</p>
+              <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                <div>
+                  <h2 className="font-semibold">Recent activity</h2>
+                  <p className="text-xs text-muted-foreground">Calendar changes in the last 48h</p>
+                </div>
+                <Button variant="ghost" size="sm" asChild><Link to="/activity">View all</Link></Button>
               </div>
               <ul className="relative px-5 py-3">
                 <div className="absolute left-[30px] top-5 bottom-5 w-px bg-border" />
-                {activity.slice(0, 6).map((ev) => {
-                  const Icon = ev.type === "added" ? Plus : ev.type === "updated" ? Pencil : Minus;
+                {history?.logs?.length === 0 && (
+                  <div className="py-4 text-center text-sm text-muted-foreground">No recent activity</div>
+                )}
+                {history?.logs?.map((ev) => {
+                  const Icon = ev.action === "added" ? Plus : ev.action === "updated" ? Pencil : Minus;
                   const cls =
-                    ev.type === "added"   ? "bg-success/15 text-success" :
-                    ev.type === "updated" ? "bg-primary/15 text-primary" :
+                    ev.action === "added"   ? "bg-success/15 text-success" :
+                    ev.action === "updated" ? "bg-primary/15 text-primary" :
                                             "bg-destructive/15 text-destructive";
                   return (
-                    <li key={ev.id} className="relative flex items-start gap-3 py-3">
+                    <li key={ev._id} className="relative flex items-start gap-3 py-3">
                       <div className={cn("z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-4 ring-card", cls)}>
                         <Icon className="h-3 w-3" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm">
-                          <span className="font-medium">
-                            {ev.type === "added" ? "Added" : ev.type === "updated" ? "Updated" : "Removed"}
+                          <span className="font-medium capitalize">
+                            {ev.action}
                           </span>{" "}
                           <span className="text-muted-foreground">·</span>{" "}
-                          <span>{ev.contest}</span>
+                          <span title={ev.contestName}>{ev.contestName}</span>
                         </div>
-                        <div className="text-xs text-muted-foreground">{ev.platform} · {timeAgo(ev.at)}</div>
+                        <div className="text-xs text-muted-foreground capitalize">{ev.platform} · {formatDistanceToNow(new Date(ev.timestamp), { addSuffix: true })}</div>
                       </div>
                     </li>
                   );
@@ -197,9 +233,9 @@ function Dashboard() {
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div>
                 <h2 className="font-semibold">Upcoming contests</h2>
-                <p className="text-xs text-muted-foreground">Next {contests.length} across all platforms</p>
+                <p className="text-xs text-muted-foreground">Next {upcomingContests.length} across all platforms</p>
               </div>
-              <Button variant="ghost" size="sm">View all</Button>
+              <Button variant="ghost" size="sm" asChild><Link to="/contests">View all</Link></Button>
             </div>
 
             <div className="hidden sm:grid sm:grid-cols-[1.7fr_1fr_1.1fr_0.7fr_0.9fr] gap-3 border-b border-border bg-muted/40 px-5 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -207,10 +243,19 @@ function Dashboard() {
             </div>
 
             <ul>
-              {contests.map((c, i) => {
+              {upcomingContests.length === 0 && (
+                <div className="py-8 text-center text-sm text-muted-foreground">No upcoming contests found.</div>
+              )}
+              {upcomingContests.map((c, i) => {
                 const start = new Date(c.startTime);
+                const durationMinutes = Math.floor(c.duration / 60);
+                // format duration correctly
+                const hours = Math.floor(durationMinutes / 60);
+                const minutes = durationMinutes % 60;
+                const durationStr = hours > 0 ? `${hours}h ${minutes > 0 ? `${minutes}m` : ''}` : `${minutes}m`;
+
                 return (
-                  <li key={c.id} className={cn(i !== 0 && "border-t border-border/60")}>
+                  <li key={c._id} className={cn(i !== 0 && "border-t border-border/60")}>
                     <button
                       type="button"
                       onClick={() => openContest(c)}
@@ -220,19 +265,19 @@ function Dashboard() {
                         <PlatformIcon platform={c.platform} />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium group-hover:text-primary">{c.name}</div>
-                          <div className="text-xs text-muted-foreground sm:hidden">
+                          <div className="text-xs text-muted-foreground sm:hidden capitalize">
                             {c.platform} · {start.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                           </div>
                         </div>
                       </div>
-                      <div className="hidden text-sm text-muted-foreground sm:block">{c.platform}</div>
+                      <div className="hidden text-sm text-muted-foreground sm:block capitalize">{c.platform}</div>
                       <div className="hidden text-sm text-muted-foreground sm:block">
                         {start.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
                       </div>
                       <div className="hidden text-sm text-muted-foreground sm:block">
-                        {Math.floor(c.durationMinutes / 60)}h {c.durationMinutes % 60 ? `${c.durationMinutes % 60}m` : ""}
+                        {durationStr}
                       </div>
-                      <div><StatusBadge status={c.status} /></div>
+                      <div><StatusBadge status="upcoming" /></div>
                     </button>
                   </li>
                 );
@@ -245,29 +290,36 @@ function Dashboard() {
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Platform settings</h2>
-            <Button variant="ghost" size="sm">Manage all</Button>
+            <Button variant="ghost" size="sm" asChild><Link to="/settings">Manage all</Link></Button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {(Object.keys(platformMeta) as (keyof typeof platformMeta)[]).map((p) => (
-              <div
-                key={p}
-                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-4 shadow-soft card-hover hover:card-hover-on"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg text-xs font-bold text-white shadow-soft transition-transform group-hover:scale-105"
-                       style={{ backgroundColor: platformMeta[p].color }}>{platformMeta[p].initials}</div>
-                  <div>
-                    <div className="text-sm font-medium">{p}</div>
-                    <div className="flex items-center gap-1 text-xs text-success">
-                      <span className="h-1.5 w-1.5 rounded-full bg-success" /> Active
+            {(Object.keys(platformMeta) as PlatformKey[]).map((p) => {
+              const isActive = profile?.preferences?.platforms?.[p] ?? false;
+              const meta = platformMeta[p];
+              const displayName = Object.keys(platformMeta).find(k => (platformMeta as any)[k].key === p) || p;
+              
+              return (
+                <div
+                  key={p}
+                  className="group flex items-center justify-between rounded-2xl border border-border bg-card p-4 shadow-soft card-hover hover:card-hover-on"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg text-xs font-bold text-white shadow-soft transition-transform group-hover:scale-105"
+                         style={{ backgroundColor: meta.color }}>{meta.initials}</div>
+                    <div>
+                      <div className="text-sm font-medium capitalize">{displayName}</div>
+                      <div className={cn("flex items-center gap-1 text-xs", isActive ? "text-success" : "text-muted-foreground")}>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-success" : "bg-muted-foreground")} /> 
+                        {isActive ? "Active" : "Inactive"}
+                      </div>
                     </div>
                   </div>
+                  <div className={cn("relative inline-flex h-6 w-11 cursor-pointer items-center rounded-full shadow-glow", isActive ? "gradient-primary" : "bg-muted")}>
+                    <span className={cn("h-5 w-5 rounded-full bg-white shadow-sm transition-transform", isActive ? "ml-auto mr-0.5" : "ml-0.5")} />
+                  </div>
                 </div>
-                <div className="relative inline-flex h-6 w-11 cursor-pointer items-center rounded-full gradient-primary shadow-glow">
-                  <span className="ml-auto mr-0.5 h-5 w-5 rounded-full bg-white shadow-sm" />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       </div>
@@ -284,12 +336,4 @@ function LegendDot({ color, label }: { color: string; label: string }) {
       {label}
     </span>
   );
-}
-
-function timeAgo(iso: string) {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60)        return `${Math.floor(diff)}s ago`;
-  if (diff < 3600)      return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400)     return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
 }

@@ -7,7 +7,8 @@ import {
 import {
   Bell, Calendar, CheckCircle2, ChevronRight, Github, Globe, Sparkles, Twitter, Zap,
 } from "lucide-react";
-import { platformMeta } from "@/lib/mock-data";
+import { platformMeta } from "@/lib/platform-config";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Nav() {
+  const { login, isAuthenticated } = useAuth();
   return (
     <header className="sticky top-0 z-40 w-full">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -32,14 +34,20 @@ function Nav() {
             <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
           </nav>
           <div className="flex items-center gap-2">
-            <Link to="/dashboard">
-              <Button variant="ghost" size="sm" className="hidden sm:inline-flex">Sign in</Button>
-            </Link>
-            <Link to="/onboarding">
-              <Button size="sm" className="gradient-primary text-white shadow-glow hover:opacity-90">
-                Get Started
-              </Button>
-            </Link>
+            {isAuthenticated ? (
+              <Link to="/dashboard">
+                <Button size="sm" className="gradient-primary text-white shadow-glow hover:opacity-90">
+                  Dashboard
+                </Button>
+              </Link>
+            ) : (
+              <>
+                <Button onClick={login} variant="ghost" size="sm" className="hidden sm:inline-flex">Sign in</Button>
+                <Button onClick={login} size="sm" className="gradient-primary text-white shadow-glow hover:opacity-90">
+                  Get Started
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -48,6 +56,7 @@ function Nav() {
 }
 
 function Hero() {
+  const { login, isAuthenticated } = useAuth();
   return (
     <section className="hero-bg relative overflow-hidden">
       <div className="mx-auto max-w-7xl px-6 pt-16 pb-24 sm:pt-24 sm:pb-32">
@@ -64,12 +73,18 @@ function Hero() {
             One setup. Every platform. Zero missed rounds.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link to="/onboarding">
-              <Button size="lg" className="gradient-primary h-11 px-6 text-white shadow-glow hover:opacity-90">
+            {isAuthenticated ? (
+              <Link to="/dashboard">
+                <Button size="lg" className="gradient-primary h-11 px-6 text-white shadow-glow hover:opacity-90">
+                  Open Dashboard
+                </Button>
+              </Link>
+            ) : (
+              <Button onClick={login} size="lg" className="gradient-primary h-11 px-6 text-white shadow-glow hover:opacity-90">
                 <GoogleIcon className="h-4 w-4" />
                 Continue with Google
               </Button>
-            </Link>
+            )}
             <a href="#how">
               <Button size="lg" variant="outline" className="h-11 px-6">
                 See How It Works <ChevronRight className="h-4 w-4" />
@@ -288,6 +303,7 @@ function FAQ() {
 }
 
 function CTA() {
+  const { login, isAuthenticated } = useAuth();
   return (
     <section className="border-t border-border">
       <div className="mx-auto max-w-7xl px-6 py-20">
@@ -296,11 +312,17 @@ function CTA() {
           <h3 className="text-3xl font-bold tracking-tight sm:text-4xl">Start syncing in under a minute.</h3>
           <p className="mx-auto mt-3 max-w-xl text-white/85">Connect Google, pick your platforms, set a reminder. That's it.</p>
           <div className="mt-7 flex justify-center">
-            <Link to="/onboarding">
-              <Button size="lg" className="h-11 bg-white px-6 text-foreground hover:bg-white/90">
+            {isAuthenticated ? (
+              <Link to="/dashboard">
+                <Button size="lg" className="h-11 bg-white px-6 text-foreground hover:bg-white/90">
+                  Open Dashboard
+                </Button>
+              </Link>
+            ) : (
+              <Button onClick={login} size="lg" className="h-11 bg-white px-6 text-foreground hover:bg-white/90">
                 <GoogleIcon className="h-4 w-4" /> Continue with Google
               </Button>
-            </Link>
+            )}
           </div>
         </div>
       </div>

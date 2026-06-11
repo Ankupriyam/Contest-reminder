@@ -9,7 +9,8 @@ import {
   Sun, Moon, ExternalLink, CalendarCheck, Plus,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
-import { contests } from "@/lib/mock-data";
+import { useUpcomingContests } from "@/hooks/use-contests";
+import { useTriggerSync } from "@/hooks/use-sync";
 import { toast } from "sonner";
 
 export function CommandPalette({
@@ -17,7 +18,18 @@ export function CommandPalette({
 }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
+  const { data: contests = [] } = useUpcomingContests();
+  const triggerSync = useTriggerSync();
+
   const run = (fn: () => void) => { onOpenChange(false); setTimeout(fn, 50); };
+
+  const handleSync = () => {
+    toast.promise(triggerSync.mutateAsync(), {
+      loading: "Syncing your contests...",
+      success: "Sync completed successfully!",
+      error: "Failed to sync contests.",
+    });
+  };
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -45,14 +57,14 @@ export function CommandPalette({
         <CommandSeparator />
 
         <CommandGroup heading="Actions">
-          <CommandItem onSelect={() => run(() => toast.success("Sync started", { description: "Fetching latest contests…" }))}>
+          <CommandItem onSelect={() => run(handleSync)}>
             <RefreshCw /> Sync now <CommandShortcut>⌘ R</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={() => run(() => toast.success("Calendar opened in a new tab"))}>
+          <CommandItem onSelect={() => run(() => window.open("https://calendar.google.com", "_blank"))}>
             <CalendarCheck /> Open Google Calendar
           </CommandItem>
-          <CommandItem onSelect={() => run(() => toast("Added new platform"))}>
-            <Plus /> Add platform
+          <CommandItem onSelect={() => run(() => navigate({ to: "/settings" }))}>
+            <Plus /> Manage platforms
           </CommandItem>
           <CommandItem onSelect={() => run(toggle)}>
             {theme === "dark" ? <Sun /> : <Moon />}
@@ -63,11 +75,11 @@ export function CommandPalette({
         <CommandSeparator />
 
         <CommandGroup heading="Contests">
-          {contests.slice(0, 6).map((c) => (
-            <CommandItem key={c.id} onSelect={() => run(() => window.open(c.url, "_blank"))}>
+          {contests.slice(0, 6).map((c: any) => (
+            <CommandItem key={c._id} onSelect={() => run(() => window.open(c.url, "_blank"))}>
               <ExternalLink />
               <span className="truncate">{c.name}</span>
-              <CommandShortcut>{c.platform}</CommandShortcut>
+              <CommandShortcut className="capitalize">{c.platform}</CommandShortcut>
             </CommandItem>
           ))}
         </CommandGroup>

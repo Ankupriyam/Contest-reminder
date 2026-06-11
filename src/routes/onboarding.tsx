@@ -1,11 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/Logo";
 import { Input } from "@/components/ui/input";
-import { platformMeta, type Platform } from "@/lib/mock-data";
-import { Check, CalendarPlus, ChevronLeft, ChevronRight, PartyPopper } from "lucide-react";
+import { platformMeta, type PlatformKey } from "@/lib/platform-config";
+import { Check, CalendarPlus, ChevronLeft, ChevronRight, PartyPopper, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { usePreferences, useUpdatePreferences } from "@/hooks/use-preferences";
+import { useCreateCalendar, useProfile } from "@/hooks/use-profile";
+import { useTriggerSync } from "@/hooks/use-sync";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/onboarding")({
   head: () => ({ meta: [{ title: "Get started — ContestSync" }] }),
@@ -16,17 +21,97 @@ const steps = ["Platforms", "Reminder", "Calendar", "Finish"] as const;
 
 function Onboarding() {
   const navigate = useNavigate();
+  const { isAuthenticated, isLoading: authLoading, login } = useAuth();
+  const { data: prefData, isLoading: prefLoading } = usePreferences();
+  const { data: profile } = useProfile();
+  const updatePref = useUpdatePreferences();
+  const createCalendar = useCreateCalendar();
+  const triggerSync = useTriggerSync();
+
   const [step, setStep] = useState(0);
-  const [selected, setSelected] = useState<Platform[]>(["LeetCode", "Codeforces", "CodeChef", "AtCoder"]);
+  const [selected, setSelected] = useState<PlatformKey[]>(["leetcode", "codeforces", "codechef", "atcoder"]);
   const [reminder, setReminder] = useState<string>("15");
   const [custom, setCustom] = useState<string>("");
   const [calendarCreated, setCalendarCreated] = useState(false);
 
-  const togglePlatform = (p: Platform) =>
+  // Redirect to home if not logged in after checking auth
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      toast.error("Please sign in to continue");
+      login(); // Or navigate("/")
+    }
+  }, [authLoading, isAuthenticated, login]);
+
+  // Load existing preferences if any
+  useEffect(() => {
+    if (prefData) {
+      const activePlatforms = Object.entries(prefData.platforms)
+        .filter(([_, isActive]) => isActive)
+        .map(([key]) => key as PlatformKey);
+      setSelected(activePlatforms);
+      
+      const rm = prefData.reminderMinutes.toString();
+      if (["5", "15", "30", "60"].includes(rm)) {
+        setReminder(rm);
+      } else {
+        setReminder("custom");
+        setCustom(rm);
+      }
+    }
+    if (profile?.user?.calendarId) {
+      setCalendarCreated(true);
+    }
+  }, [prefData, profile]);
+
+  const togglePlatform = (p: PlatformKey) =>
     setSelected((s) => (s.includes(p) ? s.filter((x) => x !== p) : [...s, p]));
 
-  const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
+  const handleNext = async () => {
+    if (step === 2) {
+      // Save preferences before moving to finish
+      try {
+        const platformsObj = {
+          leetcode: selected.includes("leetcode"),
+          codeforces: selected.includes("codeforces"),
+          codechef: selected.includes("codechef"),
+          atcoder: selected.includes("atcoder"),
+        };
+        const reminderMinutes = reminder === "custom" ? parseInt(custom, 10) || 15 : parseInt(reminder, 10);
+        
+        await updatePref.mutateAsync({
+          platforms: platformsObj,
+          reminderMinutes,
+        });
+
+        // Trigger sync
+        toast.promise(triggerSync.mutateAsync(), {
+          loading: "Syncing your contests...",
+          success: "Contests synced to your calendar!",
+          error: "Failed to sync contests initially.",
+        });
+        
+        setStep((s) => Math.min(s + 1, steps.length - 1));
+      } catch (e: any) {
+        toast.error("Failed to save preferences", { description: e.message });
+      }
+    } else {
+      setStep((s) => Math.min(s + 1, steps.length - 1));
+    }
+  };
+
   const back = () => setStep((s) => Math.max(s - 1, 0));
+
+  if (authLoading || prefLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) return null;
+
+  const platformsList = Object.values(platformMeta);
 
   return (
     <div className="min-h-screen bg-background hero-bg">
@@ -57,13 +142,16 @@ function Onboarding() {
                 description="Select every platform whose contests you want on your calendar. You can change this any time."
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {(Object.keys(platformMeta) as Platform[]).map((p) => {
-                    const on = selected.includes(p);
+                  {platformsList.map((p) => {
+                    const on = selected.includes(p.key);
+                    // find display name (the key of platformMeta)
+                    const displayName = Object.keys(platformMeta).find(k => (platformMeta as any)[k].key === p.key);
+
                     return (
                       <button
-                        key={p}
+                        key={p.key}
                         type="button"
-                        onClick={() => togglePlatform(p)}
+                        onClick={() => togglePlatform(p.key)}
                         className={cn(
                           "group flex items-center justify-between rounded-xl border p-4 text-left transition-all",
                           on
@@ -73,11 +161,11 @@ function Onboarding() {
                       >
                         <div className="flex items-center gap-3">
                           <div className="flex h-10 w-10 items-center justify-center rounded-lg text-xs font-bold text-white"
-                               style={{ backgroundColor: platformMeta[p].color }}>
-                            {platformMeta[p].initials}
+                               style={{ backgroundColor: p.color }}>
+                            {p.initials}
                           </div>
                           <div>
-                            <div className="font-medium">{p}</div>
+                            <div className="font-medium">{displayName}</div>
                             <div className="text-xs text-muted-foreground">Auto-sync contests</div>
                           </div>
                         </div>
@@ -153,7 +241,20 @@ function Onboarding() {
                         <Check className="h-3 w-3" /> Created
                       </span>
                     ) : (
-                      <Button onClick={() => setCalendarCreated(true)} size="sm" className="gradient-primary text-white">
+                      <Button 
+                        onClick={async () => {
+                          try {
+                            await createCalendar.mutateAsync();
+                            setCalendarCreated(true);
+                          } catch (e: any) {
+                            toast.error("Failed to create calendar", { description: e.message });
+                          }
+                        }} 
+                        disabled={createCalendar.isPending}
+                        size="sm" 
+                        className="gradient-primary text-white"
+                      >
+                        {createCalendar.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Create calendar
                       </Button>
                     )}
@@ -185,12 +286,13 @@ function Onboarding() {
           </div>
 
           <div className="mt-8 flex items-center justify-between">
-            <Button variant="ghost" onClick={back} disabled={step === 0}>
+            <Button variant="ghost" onClick={back} disabled={step === 0 || step === 3}>
               <ChevronLeft className="h-4 w-4" /> Back
             </Button>
             {step < steps.length - 1 ? (
-              <Button onClick={next} className="gradient-primary text-white">
-                Continue <ChevronRight className="h-4 w-4" />
+              <Button onClick={handleNext} disabled={updatePref.isPending} className="gradient-primary text-white">
+                {updatePref.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {step === 2 ? "Finish Setup" : "Continue"} <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
               <span className="text-xs text-muted-foreground">All done</span>
